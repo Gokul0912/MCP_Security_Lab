@@ -9,7 +9,11 @@ from pathlib import Path
 from typing import Any
 
 from security_lab_assistant.models import JsonObject, RunContext
+from security_lab_assistant.operations import OperationsStore
 from security_lab_assistant.policy import LabPolicy
+from security_lab_assistant.product import SCHEMA_VERSIONS
+from security_lab_assistant.platform import build_benchmark_record, contract_hash, sign_artifact, sign_payload, verify_artifact_signature, write_benchmark_record
+from security_lab_assistant.reasoning import render_reasoning_visualizer_html
 from security_lab_assistant.risk import risk_score
 from security_lab_assistant.validation import require_run_id
 
@@ -18,7 +22,7 @@ def ensure_artifact_dirs(policy: LabPolicy) -> Path:
     root = policy.artifact_root()
     if root.exists() and root.is_symlink():
         raise RuntimeError("Artifact root must not be a symlink.")
-    for child in ["runs", "reports", "audit", "exports"]:
+    for child in ["runs", "reports", "audit", "exports", "visualizations", "events", "metrics", "signatures", "private", "benchmarks", "queues", "lineage", "executions"]:
         child_path = root / child
         child_path.mkdir(parents=True, exist_ok=True)
         if child_path.is_symlink():
@@ -64,6 +68,7 @@ def initialize_index(policy: LabPolicy) -> None:
         _ensure_column(connection, "audit_events", "previous_hash", "TEXT NOT NULL DEFAULT ''")
         _ensure_column(connection, "audit_events", "event_hash", "TEXT NOT NULL DEFAULT ''")
         connection.commit()
+    OperationsStore(policy)
 
 
 def append_audit_event(policy: LabPolicy, event_type: str, payload: JsonObject) -> None:
@@ -73,11 +78,17 @@ def append_audit_event(policy: LabPolicy, event_type: str, payload: JsonObject) 
     audit_path = root / "audit" / "events.jsonl"
     previous_hash = _last_audit_hash(audit_path)
     event = {
+        "schema_version": SCHEMA_VERSIONS["audit_event"],
+        "runtime_version": "trusted-security-runtime-v1",
+        "policy_hash": __import__("security_lab_assistant.reasoning", fromlist=["stable_hash"]).stable_hash(policy.to_dict()),
+        "contract_hash": contract_hash(),
         "timestamp": datetime.now(UTC).isoformat(),
         "event_type": event_type,
         "payload": payload,
         "previous_hash": previous_hash,
+        "signature": {},
     }
+    event["signature"] = sign_payload(policy, event, "audit_event")
     event_hash = _audit_hash(event)
     event["event_hash"] = event_hash
     with audit_path.open("a", encoding="utf-8") as handle:
@@ -108,11 +119,24 @@ def save_run(
         report_path = root / "reports" / f"{run.run_id}.md"
         _atomic_write_text(report_path, report_markdown)
         payload["report_path"] = str(report_path)
+        payload["report_signature"] = sign_artifact(policy, report_path, "markdown_report")
     if sarif_payload is not None:
         sarif_path = root / "exports" / f"{run.run_id}.sarif.json"
         _atomic_write_text(sarif_path, json.dumps(sarif_payload, indent=2, sort_keys=True))
         payload["sarif_path"] = str(sarif_path)
+        payload["sarif_signature"] = sign_artifact(policy, sarif_path, "sarif_export")
+    graph = run.runtime.get("formal_reasoning_graph", {})
+    if graph:
+        visualizer_path = root / "visualizations" / f"{run.run_id}.reasoning.html"
+        _atomic_write_text(visualizer_path, render_reasoning_visualizer_html(graph))
+        payload["reasoning_visualizer_path"] = str(visualizer_path)
+        payload["reasoning_visualizer_signature"] = sign_artifact(policy, visualizer_path, "reasoning_visualizer")
+    benchmark_record = build_benchmark_record(run)
+    benchmark_path = write_benchmark_record(policy, benchmark_record)
+    payload["benchmark_path"] = str(benchmark_path)
+    payload["benchmark_signature"] = sign_artifact(policy, benchmark_path, "benchmark_record")
     _atomic_write_text(run_path, json.dumps(payload, indent=2, sort_keys=True))
+    sign_artifact(policy, run_path, "run_json")
     _upsert_run_index(policy, payload, str(run_path))
     append_audit_event(policy, "run.saved", {"run_id": run.run_id, "path": str(run_path)})
     return run_path
@@ -214,6 +238,25 @@ def verify_audit_chain(policy: LabPolicy) -> JsonObject:
             previous = event_hash
             count += 1
     return {"ok": True, "events": count, "last_hash": previous}
+
+
+def verify_artifact_signatures(policy: LabPolicy) -> JsonObject:
+    signature_dir = ensure_artifact_dirs(policy) / "signatures"
+    manifests = sorted(signature_dir.glob("*.sig.json"))
+    results = [verify_artifact_signature(policy, manifest) for manifest in manifests]
+    failed = [item for item in results if not item.get("ok")]
+    return {
+        "ok": not failed,
+        "signatures": len(results),
+        "failed": failed,
+    }
+
+
+def verify_evidence_lineage(policy: LabPolicy, run_id: str) -> JsonObject:
+    from security_lab_assistant.runtimes.evidence import EvidenceRuntime
+
+    safe_run_id = require_run_id({"run_id": run_id})
+    return EvidenceRuntime(policy).verify_lineage(safe_run_id)
 
 
 def _upsert_run_index(policy: LabPolicy, payload: JsonObject, run_path: str) -> None:

@@ -70,6 +70,34 @@ def render_markdown_report(run: RunContext) -> str:
                 "",
             ]
         )
+    if run.runtime:
+        lines.extend(["## Runtime Intelligence", ""])
+        trust = run.runtime.get("trust", {})
+        cognition = run.runtime.get("security_cognition", {})
+        confidence = run.runtime.get("confidence_calibration", {})
+        integrity = run.runtime.get("evidence_integrity", {})
+        replay = run.runtime.get("deterministic_replay", {})
+        critique = run.runtime.get("adversarial_critique", {})
+        graph = run.runtime.get("attack_graph", {})
+        quality = run.runtime.get("reasoning_quality", {})
+        benchmark = run.runtime.get("benchmark_suite", {})
+        calibration = run.runtime.get("dynamic_trust_calibration", {})
+        primary = cognition.get("primary_interpretation", {})
+        lines.extend(
+            [
+                f"- Trust score: {trust.get('score', 0)}/100 ({trust.get('band', 'unknown')})",
+                f"- Calibrated trust: {calibration.get('calibrated_score', 'n/a')}/100 ({calibration.get('band', 'unknown')})",
+                f"- Reasoning quality: {quality.get('overall_score', 'n/a')}",
+                f"- Benchmark suite score: {benchmark.get('score', 'n/a')}",
+                f"- Primary interpretation: {primary.get('name', 'n/a')} ({primary.get('confidence', 'n/a')})",
+                f"- Calibrated confidence: {confidence.get('calibrated_confidence', 'n/a')}",
+                f"- Replay workflow hash: `{replay.get('workflow_hash', 'n/a')}`",
+                f"- Evidence root hash: `{integrity.get('root_hash', 'n/a')}`",
+                f"- Attack graph: {graph.get('summary', 'n/a')}",
+                f"- Critique verdict: {critique.get('verdict', 'n/a')}",
+                "",
+            ]
+        )
     return "\n".join(lines).rstrip() + "\n"
 
 

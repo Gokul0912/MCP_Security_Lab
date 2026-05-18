@@ -4,12 +4,14 @@ import json
 import queue
 import threading
 import tkinter as tk
-from pathlib import Path
 from tkinter import messagebox, ttk
 from typing import Any
 
+from security_lab_assistant.output import format_json, format_recon_result, format_run_details, format_runtime_section
 from security_lab_assistant.policy import LabPolicy, PolicyError, load_default_policy
 from security_lab_assistant.storage import list_runs, load_run, search_runs, verify_audit_chain
+from security_lab_assistant.tools.intelligence import RUNTIME_SECTIONS
+from security_lab_assistant.tools.registry import TOOLS
 from security_lab_assistant.validation import bounded_optional_string, parse_limit, parse_ports, parse_status, require_run_id
 from security_lab_assistant.workflows.autonomous_recon import run_autonomous_recon
 
@@ -31,6 +33,8 @@ class SecurityLabGui(tk.Tk):
         self.worker_queue: queue.Queue[dict[str, Any]] = queue.Queue()
         self.active_worker: threading.Thread | None = None
         self.selected_run_id = ""
+        self.current_result_payload: dict[str, Any] | None = None
+        self.current_details_payload: dict[str, Any] | None = None
 
         self.title(APP_TITLE)
         self.geometry("1180x760")
@@ -84,12 +88,18 @@ class SecurityLabGui(tk.Tk):
         self.dashboard_tab = ttk.Frame(self.notebook, padding=12)
         self.history_tab = ttk.Frame(self.notebook, padding=12)
         self.policy_tab = ttk.Frame(self.notebook, padding=12)
+        self.runtime_tab = ttk.Frame(self.notebook, padding=12)
+        self.operations_tab = ttk.Frame(self.notebook, padding=12)
         self.notebook.add(self.dashboard_tab, text="Recon Console")
         self.notebook.add(self.history_tab, text="Run History")
+        self.notebook.add(self.runtime_tab, text="Runtime Intel")
+        self.notebook.add(self.operations_tab, text="Operations")
         self.notebook.add(self.policy_tab, text="Safety Policy")
 
         self._build_dashboard()
         self._build_history()
+        self._build_runtime_intel()
+        self._build_operations()
         self._build_policy()
 
     def _build_dashboard(self) -> None:
@@ -136,6 +146,19 @@ class SecurityLabGui(tk.Tk):
         right.columnconfigure(0, weight=1)
 
         ttk.Label(right, text="Current Result", style="Title.TLabel").grid(row=0, column=0, sticky=tk.W)
+        view_controls = ttk.Frame(right)
+        view_controls.grid(row=0, column=0, sticky=tk.E, pady=(0, 6))
+        ttk.Label(view_controls, text="View").pack(side=tk.LEFT, padx=(0, 6))
+        self.result_view_var = tk.StringVar(value="Readable")
+        result_view = ttk.Combobox(
+            view_controls,
+            textvariable=self.result_view_var,
+            values=["Readable", "JSON"],
+            width=10,
+            state="readonly",
+        )
+        result_view.pack(side=tk.LEFT)
+        result_view.bind("<<ComboboxSelected>>", lambda _event: self.render_current_result())
         self.summary_var = tk.StringVar(value="No GUI run has been started yet.")
         ttk.Label(right, textvariable=self.summary_var, style="Muted.TLabel").grid(row=1, column=0, sticky=tk.W, pady=(4, 10))
         self.result_text = tk.Text(right, wrap=tk.NONE, bg="#0f172a", fg="#dbeafe", insertbackground="#ffffff", relief=tk.FLAT)
@@ -159,6 +182,7 @@ class SecurityLabGui(tk.Tk):
         )
         ttk.Button(filters, text="Apply", command=self.refresh_runs).grid(row=0, column=4)
         ttk.Button(filters, text="Verify Audit", command=self.verify_audit).grid(row=0, column=5, padx=(8, 0))
+        ttk.Button(filters, text="Deep Verify", command=self.run_deep_verify).grid(row=0, column=6, padx=(8, 0))
 
         columns = ("run_id", "target", "status", "risk", "findings", "created")
         self.runs_tree = ttk.Treeview(self.history_tab, columns=columns, show="headings", selectmode="browse")
@@ -182,9 +206,130 @@ class SecurityLabGui(tk.Tk):
         details_frame.columnconfigure(0, weight=1)
         details_frame.rowconfigure(1, weight=1)
         ttk.Label(details_frame, text="Run Details", style="Title.TLabel").grid(row=0, column=0, sticky=tk.W)
+        details_controls = ttk.Frame(details_frame)
+        details_controls.grid(row=0, column=0, sticky=tk.E)
+        ttk.Label(details_controls, text="View").pack(side=tk.LEFT, padx=(0, 6))
+        self.details_view_var = tk.StringVar(value="Readable")
+        details_view = ttk.Combobox(
+            details_controls,
+            textvariable=self.details_view_var,
+            values=["Readable", "JSON"],
+            width=10,
+            state="readonly",
+        )
+        details_view.pack(side=tk.LEFT)
+        details_view.bind("<<ComboboxSelected>>", lambda _event: self.render_current_details())
         self.details_text = tk.Text(details_frame, height=12, wrap=tk.NONE, bg="#ffffff", relief=tk.FLAT)
         self.details_text.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
         self._attach_scrollbars(details_frame, self.details_text, row=1, column=0)
+
+    def _build_runtime_intel(self) -> None:
+        self.runtime_tab.columnconfigure(0, weight=1)
+        self.runtime_tab.rowconfigure(1, weight=1)
+        controls = ttk.Frame(self.runtime_tab, style="Panel.TFrame", padding=12)
+        controls.grid(row=0, column=0, sticky=tk.EW, pady=(0, 10))
+        controls.columnconfigure(1, weight=1)
+        ttk.Label(controls, text="Selected run").grid(row=0, column=0, padx=(0, 6))
+        self.runtime_run_var = tk.StringVar(value="No run selected")
+        ttk.Label(controls, textvariable=self.runtime_run_var).grid(row=0, column=1, sticky=tk.W)
+        ttk.Label(controls, text="Section").grid(row=0, column=2, padx=(12, 6))
+        self.runtime_section_var = tk.StringVar(value="explain")
+        runtime_section = ttk.Combobox(
+            controls,
+            textvariable=self.runtime_section_var,
+            values=sorted(RUNTIME_SECTIONS),
+            width=16,
+            state="readonly",
+        )
+        runtime_section.grid(row=0, column=3)
+        runtime_section.bind("<<ComboboxSelected>>", lambda _event: self.render_runtime_section())
+        ttk.Button(controls, text="Show", command=self.render_runtime_section).grid(row=0, column=4, padx=(8, 0))
+        self.runtime_json_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            controls,
+            text="JSON",
+            variable=self.runtime_json_var,
+            command=self.render_runtime_section,
+        ).grid(row=0, column=5, padx=(8, 0))
+
+        panel = ttk.Frame(self.runtime_tab, style="Panel.TFrame", padding=12)
+        panel.grid(row=1, column=0, sticky="nsew")
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(0, weight=1)
+        self.runtime_text = tk.Text(panel, wrap=tk.NONE, bg="#ffffff", relief=tk.FLAT)
+        self.runtime_text.grid(row=0, column=0, sticky="nsew")
+        self._attach_scrollbars(panel, self.runtime_text, row=0, column=0)
+
+    def _build_operations(self) -> None:
+        self.operations_tab.columnconfigure(0, weight=0)
+        self.operations_tab.columnconfigure(1, weight=1)
+        self.operations_tab.rowconfigure(0, weight=1)
+
+        controls = ttk.Frame(self.operations_tab, style="Panel.TFrame", padding=14)
+        controls.grid(row=0, column=0, sticky="ns", padx=(0, 12))
+        controls.columnconfigure(0, weight=1)
+
+        ttk.Label(controls, text="Forensic Verification", style="Title.TLabel").grid(row=0, column=0, sticky=tk.W)
+        ttk.Button(controls, text="Deep Verify", style="Primary.TButton", command=self.run_deep_verify).grid(row=1, column=0, sticky=tk.EW, pady=(10, 6))
+        ttk.Button(controls, text="Deep Verify (No Quarantine)", command=lambda: self.run_deep_verify(quarantine=False)).grid(row=2, column=0, sticky=tk.EW, pady=3)
+        ttk.Button(controls, text="Verify Artifacts", command=self.verify_artifacts).grid(row=3, column=0, sticky=tk.EW, pady=3)
+        ttk.Button(controls, text="Verify Audit", command=self.verify_audit_to_panel).grid(row=4, column=0, sticky=tk.EW, pady=3)
+        ttk.Button(controls, text="Verify Selected Replay", command=self.verify_selected_replay).grid(row=5, column=0, sticky=tk.EW, pady=(12, 3))
+        ttk.Button(controls, text="Verify Selected Lineage", command=self.verify_selected_lineage).grid(row=6, column=0, sticky=tk.EW, pady=3)
+
+        ttk.Label(controls, text="Operations Views", style="Title.TLabel").grid(row=7, column=0, sticky=tk.W, pady=(24, 6))
+        ops_buttons = [
+            ("Workflow States", "ops.workflows", {"role": "operator"}),
+            ("Queue + Leases", "ops.queue", {"role": "operator"}),
+            ("Metrics", "ops.metrics", {"role": "auditor"}),
+            ("Events", "ops.events", {"role": "auditor"}),
+            ("Runtime Contracts", "ops.runtime_contracts", {"role": "auditor"}),
+            ("Failure Taxonomy", "ops.failure_taxonomy", {"role": "auditor"}),
+            ("Platform Metadata", "ops.platform", {"role": "readonly"}),
+        ]
+        for row, (label, tool_name, arguments) in enumerate(ops_buttons, start=8):
+            ttk.Button(
+                controls,
+                text=label,
+                command=lambda name=tool_name, args=arguments, section=label: self.run_tool_to_operations(name, args, section),
+            ).grid(row=row, column=0, sticky=tk.EW, pady=3)
+
+        ttk.Label(controls, text="Batch Workflow", style="Title.TLabel").grid(row=16, column=0, sticky=tk.W, pady=(24, 6))
+        ttk.Label(controls, text="Targets", style="Muted.TLabel").grid(row=17, column=0, sticky=tk.W)
+        self.batch_targets_var = tk.StringVar(value="127.0.0.1,localhost")
+        ttk.Entry(controls, textvariable=self.batch_targets_var, width=30).grid(row=18, column=0, sticky=tk.EW, pady=(2, 6))
+        ttk.Label(controls, text="Ports", style="Muted.TLabel").grid(row=19, column=0, sticky=tk.W)
+        self.batch_ports_var = tk.StringVar(value="80,443,8000,8080,8443")
+        ttk.Entry(controls, textvariable=self.batch_ports_var, width=30).grid(row=20, column=0, sticky=tk.EW, pady=(2, 6))
+        ttk.Label(controls, text="Objective", style="Muted.TLabel").grid(row=21, column=0, sticky=tk.W)
+        self.batch_objective_var = tk.StringVar(value="batch baseline web reconnaissance")
+        ttk.Entry(controls, textvariable=self.batch_objective_var, width=30).grid(row=22, column=0, sticky=tk.EW, pady=(2, 6))
+        ttk.Label(controls, text="Role", style="Muted.TLabel").grid(row=23, column=0, sticky=tk.W)
+        self.batch_role_var = tk.StringVar(value="reviewer")
+        ttk.Combobox(
+            controls,
+            textvariable=self.batch_role_var,
+            values=["reviewer", "admin", "analyst", "operator", "auditor", "readonly"],
+            state="readonly",
+        ).grid(row=24, column=0, sticky=tk.EW, pady=(2, 6))
+        self.batch_approved_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(controls, text="Approved", variable=self.batch_approved_var).grid(row=25, column=0, sticky=tk.W)
+        self.batch_button = ttk.Button(controls, text="Run Batch", command=self.start_batch)
+        self.batch_button.grid(row=26, column=0, sticky=tk.EW, pady=(8, 0))
+
+        ttk.Label(controls, text="Selected Run", style="Title.TLabel").grid(row=27, column=0, sticky=tk.W, pady=(24, 6))
+        self.operations_run_var = tk.StringVar(value="No run selected")
+        ttk.Label(controls, textvariable=self.operations_run_var, style="Muted.TLabel", wraplength=230).grid(row=28, column=0, sticky=tk.W)
+
+        panel = ttk.Frame(self.operations_tab, style="Panel.TFrame", padding=12)
+        panel.grid(row=0, column=1, sticky="nsew")
+        panel.columnconfigure(0, weight=1)
+        panel.rowconfigure(1, weight=1)
+        ttk.Label(panel, text="Operations Output", style="Title.TLabel").grid(row=0, column=0, sticky=tk.W)
+        self.operations_text = tk.Text(panel, wrap=tk.NONE, bg="#ffffff", relief=tk.FLAT)
+        self.operations_text.grid(row=1, column=0, sticky="nsew", pady=(8, 0))
+        self._attach_scrollbars(panel, self.operations_text, row=1, column=0)
+        self._set_text(self.operations_text, "Use the controls on the left to inspect runtime operations.\n")
 
     def _build_policy(self) -> None:
         self.policy_tab.columnconfigure(0, weight=1)
@@ -244,6 +389,7 @@ class SecurityLabGui(tk.Tk):
         self.run_button.configure(state=tk.DISABLED)
         self.status_var.set("Recon running...")
         self.summary_var.set(f"Running policy-gated recon against {target}.")
+        self.current_result_payload = None
         self._set_text(self.result_text, "Running...\n")
         self.active_worker = threading.Thread(
             target=self._run_recon_worker,
@@ -259,6 +405,50 @@ class SecurityLabGui(tk.Tk):
         except Exception as exc:
             self.worker_queue.put({"type": "error", "message": f"{exc.__class__.__name__}: {exc}"})
 
+    def start_batch(self) -> None:
+        if self.active_worker and self.active_worker.is_alive():
+            messagebox.showinfo(APP_TITLE, "A workflow is already in progress.")
+            return
+        try:
+            targets = [target.strip() for target in self.batch_targets_var.get().split(",") if target.strip()]
+            ports = parse_ports_text(self.batch_ports_var.get())
+            objective = bounded_optional_string(self.batch_objective_var.get(), "objective", maximum=256)
+            if not objective:
+                objective = "batch baseline web reconnaissance"
+            role = bounded_optional_string(self.batch_role_var.get(), "role", maximum=32) or "reviewer"
+            approved = bool(self.batch_approved_var.get())
+            self.policy.assert_batch_allowed(targets, approved=approved)
+            self.policy.assert_port_scan_allowed(ports)
+        except PolicyError as exc:
+            messagebox.showerror("Policy refusal", str(exc))
+            return
+
+        self.batch_button.configure(state=tk.DISABLED)
+        self.status_var.set("Batch workflow running...")
+        self._set_text(self.operations_text, "Running batch workflow...\n")
+        self.active_worker = threading.Thread(
+            target=self._run_batch_worker,
+            args=(targets, ports, objective, role, approved),
+            daemon=True,
+        )
+        self.active_worker.start()
+
+    def _run_batch_worker(self, targets: list[str], ports: list[int], objective: str, role: str, approved: bool) -> None:
+        try:
+            result = TOOLS["workflow.batch_recon"].handler(
+                {
+                    "targets": targets,
+                    "ports": ports,
+                    "objective": objective,
+                    "role": role,
+                    "approved": approved,
+                },
+                self.policy,
+            )
+            self.worker_queue.put({"type": "batch_complete", "result": {"ok": result.ok, "data": result.data}})
+        except Exception as exc:
+            self.worker_queue.put({"type": "error", "message": f"{exc.__class__.__name__}: {exc}"})
+
     def _drain_worker_queue(self) -> None:
         try:
             while True:
@@ -271,14 +461,25 @@ class SecurityLabGui(tk.Tk):
                         f"Run {data.get('run_id', 'unknown')} finished: "
                         f"{data.get('status', 'unknown')} | risk {risk.get('score', 0)} ({risk.get('band', 'n/a')})"
                     )
-                    self._set_text(self.result_text, json.dumps(payload, indent=2, sort_keys=True))
+                    self.current_result_payload = payload
+                    self.render_current_result()
                     self.status_var.set(f"Completed. Report: {data.get('report_path', 'not generated')}")
                     self.run_button.configure(state=tk.NORMAL)
                     self.refresh_runs()
                 elif event["type"] == "error":
                     self.status_var.set("Recon failed.")
                     self.run_button.configure(state=tk.NORMAL)
+                    if hasattr(self, "batch_button"):
+                        self.batch_button.configure(state=tk.NORMAL)
                     messagebox.showerror(APP_TITLE, event["message"])
+                elif event["type"] == "batch_complete":
+                    payload = event["result"]
+                    data = payload.get("data", {})
+                    self.status_var.set(f"Batch workflow: {data.get('status', 'unknown')}")
+                    self._show_operations_result("Batch Workflow", payload)
+                    if hasattr(self, "batch_button"):
+                        self.batch_button.configure(state=tk.NORMAL)
+                    self.refresh_runs()
         except queue.Empty:
             pass
         self.after(100, self._drain_worker_queue)
@@ -324,12 +525,103 @@ class SecurityLabGui(tk.Tk):
             messagebox.showerror(APP_TITLE, str(exc))
             return
         self.selected_run_id = safe_run_id
-        self._set_text(self.details_text, json.dumps(payload, indent=2, sort_keys=True))
+        self.current_details_payload = payload
+        self.runtime_run_var.set(safe_run_id)
+        if hasattr(self, "operations_run_var"):
+            self.operations_run_var.set(safe_run_id)
+        self.render_current_details()
+        self.render_runtime_section()
 
     def verify_audit(self) -> None:
         result = verify_audit_chain(self.policy)
         self.status_var.set(f"Audit chain: {'ok' if result.get('ok') else 'failed'} | events: {result.get('events', 0)}")
         messagebox.showinfo("Audit verification", json.dumps(result, indent=2, sort_keys=True))
+
+    def verify_audit_to_panel(self) -> None:
+        result = TOOLS["run.verify_audit"].handler({"role": "auditor"}, self.policy)
+        self._show_operations_result("Audit Verification", {"ok": result.ok, "data": result.data})
+
+    def verify_artifacts(self) -> None:
+        result = TOOLS["run.verify_artifacts"].handler({"role": "auditor"}, self.policy)
+        self._show_operations_result("Artifact Signature Verification", {"ok": result.ok, "data": result.data})
+
+    def run_deep_verify(self, quarantine: bool = True) -> None:
+        result = TOOLS["run.verify_deep"].handler({"role": "auditor", "quarantine": quarantine}, self.policy)
+        payload = {"ok": result.ok and bool(result.data.get("ok")), "data": result.data}
+        failed_count = len(result.data.get("failed_runs", [])) if isinstance(result.data, dict) else 0
+        self.status_var.set(f"Deep verification: {'ok' if payload['ok'] else 'failed'} | failed runs: {failed_count}")
+        self._show_operations_result("Deep Verification", payload)
+        self.refresh_runs()
+
+    def verify_selected_replay(self) -> None:
+        run_id = self._require_selected_run()
+        if not run_id:
+            return
+        result = TOOLS["run.verify_replay"].handler({"run_id": run_id, "role": "auditor"}, self.policy)
+        self._show_operations_result("Replay Verification", {"ok": result.ok, "data": result.data})
+
+    def verify_selected_lineage(self) -> None:
+        run_id = self._require_selected_run()
+        if not run_id:
+            return
+        result = TOOLS["run.verify_lineage"].handler({"run_id": run_id, "role": "auditor"}, self.policy)
+        self._show_operations_result("Lineage Verification", {"ok": result.ok, "data": result.data})
+
+    def run_tool_to_operations(self, tool_name: str, arguments: dict[str, Any], section: str) -> None:
+        result = TOOLS[tool_name].handler(arguments, self.policy)
+        self._show_operations_result(section, {"ok": result.ok, "data": result.data})
+
+    def _show_operations_result(self, section: str, payload: dict[str, Any]) -> None:
+        if not hasattr(self, "operations_text"):
+            return
+        self._set_text(
+            self.operations_text,
+            format_runtime_section({"section": section, "data": payload}),
+        )
+
+    def _require_selected_run(self) -> str:
+        if not self.selected_run_id:
+            messagebox.showinfo(APP_TITLE, "Select a saved run first.")
+            return ""
+        try:
+            return require_run_id({"run_id": self.selected_run_id})
+        except PolicyError as exc:
+            messagebox.showerror(APP_TITLE, str(exc))
+            return ""
+
+    def render_current_result(self) -> None:
+        if not self.current_result_payload:
+            return
+        if self.result_view_var.get() == "JSON":
+            self._set_text(self.result_text, format_json(self.current_result_payload))
+        else:
+            self._set_text(self.result_text, format_recon_result(self.current_result_payload))
+
+    def render_current_details(self) -> None:
+        if not self.current_details_payload:
+            return
+        if self.details_view_var.get() == "JSON":
+            self._set_text(self.details_text, format_json(self.current_details_payload))
+        else:
+            self._set_text(self.details_text, format_run_details(self.current_details_payload))
+
+    def render_runtime_section(self) -> None:
+        if not self.current_details_payload:
+            if hasattr(self, "runtime_text"):
+                self._set_text(self.runtime_text, "Select a saved run to inspect runtime intelligence.\n")
+            return
+        section = self.runtime_section_var.get()
+        runtime_key = RUNTIME_SECTIONS.get(section, "")
+        section_payload = {
+            "run_id": self.selected_run_id,
+            "section": section,
+            "runtime_key": runtime_key,
+            "data": self.current_details_payload.get("runtime", {}).get(runtime_key, {}),
+        }
+        if self.runtime_json_var.get():
+            self._set_text(self.runtime_text, format_json(section_payload))
+        else:
+            self._set_text(self.runtime_text, format_runtime_section(section_payload))
 
     def _set_text(self, widget: tk.Text, value: str) -> None:
         widget.configure(state=tk.NORMAL)

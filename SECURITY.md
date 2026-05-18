@@ -20,9 +20,16 @@ This project is designed as a defensive, lab-scoped security assistant. It delib
 - UUID-only run lookup
 - Atomic writes for JSON, Markdown, and SARIF artifacts
 - Tamper-evident audit log with hash chaining
+- Schema-versioned audit events
+- Durable workflow state records for crash/restart recovery
+- Local durable queue records with workflow leases
+- Append-only queue event stream for operational recovery
 - SQLite index uses parameterized queries
 - Server internal errors do not echo raw exception details to clients
 - No shell execution tool is exposed
+- Execution manifests include schema version, policy hash, contract hash, worker attestation, quotas, output hash, and detached signature metadata
+- Evidence lineage records are append-only, hash-chained, and signed
+- Structured failure taxonomy exists for worker, governance, replay, lineage, attestation, policy, queue, lease, signature, reasoning, quota, and recovery failures
 
 ## Security Boundaries
 
@@ -34,8 +41,10 @@ No software can honestly guarantee zero vulnerabilities. Current residual areas 
 
 - Run the suite in CI on every change.
 - Add OS-level sandboxing around the process.
+- Add container sandboxing for workers before hostile multi-tenant use.
 - Put the MCP server behind authenticated transport if exposed beyond stdin/stdout.
 - Rotate and protect filesystem permissions for artifact directories.
+- Move local signing keys and secret references into an encrypted secret provider before production use.
 - Add signed release builds and dependency scanning when external dependencies are introduced.
 
 ## Verification

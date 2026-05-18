@@ -1,14 +1,14 @@
-# Autonomous Security Lab Assistant: Complete Product Guide
+# Trustworthy Autonomous Security Runtime: Complete Product Guide
 
 ## 1. What This Project Is
 
-The Autonomous Security Lab Assistant is a safe-by-default cybersecurity lab assistant built around MCP-style tool orchestration.
+The Autonomous Security Lab Assistant is a safe-by-default cybersecurity lab assistant built around MCP-style tool orchestration. Its product direction is a **Trustworthy Autonomous Security Runtime**: a governed runtime for bounded, explainable, replayable security workflows.
 
 In simple words:
 
 This project lets an AI agent or a command-line user safely inspect authorized lab targets, collect evidence, produce security findings, save reports, and keep an audit trail.
 
-It is not a normal chatbot. It is not a CRUD app. It is not just an API wrapper.
+It is not a normal chatbot. It is not a CRUD app. It is not just an API wrapper. It is also not an AI hacking platform.
 
 It is a backend security orchestration system that teaches and demonstrates:
 
@@ -1106,4 +1106,3 @@ It teaches how to combine:
 The most important design principle is:
 
 Policy first, tools second, evidence always.
-

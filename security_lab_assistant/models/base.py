@@ -5,8 +5,23 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
+from security_lab_assistant.product import RUNTIME_VERSION
+
 
 JsonObject = dict[str, Any]
+
+
+@dataclass(frozen=True)
+class SchemaRecord:
+    schema_version: str
+    runtime_version: str = RUNTIME_VERSION
+    policy_hash: str = ""
+    contract_hash: str = ""
+    timestamp: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    signature: JsonObject = field(default_factory=dict)
+
+    def to_dict(self) -> JsonObject:
+        return asdict(self)
 
 
 @dataclass(frozen=True)
@@ -41,6 +56,7 @@ class RunContext:
     evidence: list[ToolResult] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
     warnings: list[str] = field(default_factory=list)
+    runtime: JsonObject = field(default_factory=dict)
 
     def add_result(self, result: ToolResult) -> ToolResult:
         self.evidence.append(result)

@@ -28,17 +28,25 @@ class LabPolicy:
     max_scan_workers: int
     max_http_bytes: int
     artifacts_dir: str
+    max_batch_targets: int = 25
+    max_workflow_events_per_run: int = 1000
+    max_run_evidence_items: int = 250
+    require_human_approval_for_batch: bool = True
 
     @classmethod
     def from_file(cls, path: str | Path) -> "LabPolicy":
         raw = json.loads(Path(path).read_text(encoding="utf-8"))
+        return cls.from_dict(raw)
+
+    @classmethod
+    def from_dict(cls, raw: dict[str, object]) -> "LabPolicy":
         return cls(
-            name=raw["name"],
-            allowed_cidrs=tuple(ipaddress.ip_network(cidr) for cidr in raw["allowed_cidrs"]),
-            allowed_hostnames=tuple(normalize_target(hostname) for hostname in raw.get("allowed_hostnames", [])),
+            name=str(raw["name"]),
+            allowed_cidrs=tuple(ipaddress.ip_network(str(cidr)) for cidr in raw["allowed_cidrs"]),  # type: ignore[index]
+            allowed_hostnames=tuple(normalize_target(str(hostname)) for hostname in raw.get("allowed_hostnames", [])),  # type: ignore[union-attr]
             allow_dns_targets=bool(raw.get("allow_dns_targets", False)),
-            blocked_ports=tuple(int(port) for port in raw.get("blocked_ports", [])),
-            allowed_schemes=tuple(raw.get("allowed_schemes", ["http", "https"])),
+            blocked_ports=tuple(int(port) for port in raw.get("blocked_ports", [])),  # type: ignore[union-attr]
+            allowed_schemes=tuple(str(scheme) for scheme in raw.get("allowed_schemes", ["http", "https"])),  # type: ignore[union-attr]
             max_redirects=int(raw.get("max_redirects", 0)),
             connect_timeout_seconds=float(raw.get("connect_timeout_seconds", 1.0)),
             http_timeout_seconds=float(raw.get("http_timeout_seconds", 3.0)),
@@ -46,7 +54,44 @@ class LabPolicy:
             max_scan_workers=int(raw.get("max_scan_workers", 16)),
             max_http_bytes=int(raw.get("max_http_bytes", 262144)),
             artifacts_dir=str(raw.get("artifacts_dir", ".security_lab_assistant")),
+            max_batch_targets=int(raw.get("max_batch_targets", 25)),
+            max_workflow_events_per_run=int(raw.get("max_workflow_events_per_run", 1000)),
+            max_run_evidence_items=int(raw.get("max_run_evidence_items", 250)),
+            require_human_approval_for_batch=bool(raw.get("require_human_approval_for_batch", True)),
         )
+
+    def to_dict(self) -> dict[str, object]:
+        return {
+            "name": self.name,
+            "allowed_cidrs": [str(network) for network in self.allowed_cidrs],
+            "allowed_hostnames": list(self.allowed_hostnames),
+            "allow_dns_targets": self.allow_dns_targets,
+            "blocked_ports": list(self.blocked_ports),
+            "allowed_schemes": list(self.allowed_schemes),
+            "max_redirects": self.max_redirects,
+            "connect_timeout_seconds": self.connect_timeout_seconds,
+            "http_timeout_seconds": self.http_timeout_seconds,
+            "max_tcp_ports_per_scan": self.max_tcp_ports_per_scan,
+            "max_scan_workers": self.max_scan_workers,
+            "max_http_bytes": self.max_http_bytes,
+            "artifacts_dir": self.artifacts_dir,
+            "max_batch_targets": self.max_batch_targets,
+            "max_workflow_events_per_run": self.max_workflow_events_per_run,
+            "max_run_evidence_items": self.max_run_evidence_items,
+            "require_human_approval_for_batch": self.require_human_approval_for_batch,
+        }
+
+    def assert_batch_allowed(self, targets: list[str], approved: bool = False) -> None:
+        if not targets:
+            raise PolicyError("At least one target is required.")
+        if len(targets) > self.max_batch_targets:
+            raise PolicyError(
+                f"Requested {len(targets)} targets; policy allows at most {self.max_batch_targets} per batch."
+            )
+        if self.require_human_approval_for_batch and not approved:
+            raise PolicyError("Batch workflows require explicit human approval.")
+        for target in targets:
+            self.assert_target_allowed(target)
 
     def resolve_target(self, target: str) -> list[ipaddress._BaseAddress]:
         target = normalize_target(target)

@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from security_lab_assistant.mcp_protocol import handle_request
+from security_lab_assistant.output import format_recon_result, format_runs_list
 from security_lab_assistant.policy import LabPolicy, PolicyError, load_default_policy
 from security_lab_assistant.storage import list_runs, load_run
 from security_lab_assistant.tools.registry import TOOLS
@@ -74,6 +75,7 @@ class ProductEdgeTests(unittest.TestCase):
             self.assertEqual(run["run_id"], run_id)
             self.assertTrue(Path(run["report_path"]).exists())
             self.assertTrue(Path(run["sarif_path"]).exists())
+            self.assertTrue(Path(run["reasoning_visualizer_path"]).exists())
             self.assertIn("risk", run)
             self.assertEqual(len(list_runs(policy)), 1)
         finally:
@@ -126,6 +128,31 @@ class ProductEdgeTests(unittest.TestCase):
     def test_gui_port_parser_rejects_non_integer_values(self) -> None:
         with self.assertRaises(PolicyError):
             parse_ports_text("80, nope")
+
+    def test_readable_recon_output_highlights_summary(self) -> None:
+        output = format_recon_result(
+            {
+                "ok": True,
+                "data": {
+                    "run_id": "11111111-1111-4111-8111-111111111111",
+                    "target": "127.0.0.1",
+                    "objective": "baseline",
+                    "status": "completed",
+                    "open_ports": [8000],
+                    "risk": {"score": 47, "band": "medium", "drivers": {"finding_weight": 40}},
+                    "severity_counts": {"medium": 1},
+                    "warnings": ["missing headers"],
+                    "findings": [{"title": "Header review", "severity": "medium"}],
+                },
+            }
+        )
+        self.assertIn("Recon Run Summary", output)
+        self.assertIn("Open ports  : 8000", output)
+        self.assertIn("Risk        : 47/100 (medium)", output)
+        self.assertIn("Header review", output)
+
+    def test_readable_runs_output_handles_empty_history(self) -> None:
+        self.assertIn("No saved runs yet.", format_runs_list([]))
 
     def test_absolute_artifact_dir_is_refused(self) -> None:
         base = load_default_policy()

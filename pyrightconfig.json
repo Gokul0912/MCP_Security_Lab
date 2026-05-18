@@ -1,0 +1,6 @@
+{
+  "typeCheckingMode": "strict",
+  "pythonVersion": "3.11",
+  "include": ["security_lab_assistant", "tests"],
+  "reportMissingTypeStubs": "warning"
+}

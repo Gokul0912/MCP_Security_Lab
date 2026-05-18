@@ -16,6 +16,10 @@ class ToolSpec:
     description: str
     input_schema: JsonObject
     handler: ToolHandler
+    required_role: str = "analyst"
+    required_permission: str = "workflow.run"
+    approval_level: str = "none"
+    risk_class: str = "low"
 
 
 def refused(name: str, exc: PolicyError) -> ToolResult:

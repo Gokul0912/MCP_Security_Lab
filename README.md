@@ -1,6 +1,6 @@
 # Autonomous Security Lab Assistant
 
-A safe-by-default MCP-style assistant for cybersecurity lab workflows. It is built as a product core, not a disposable demo: runs are persisted, actions are audited, reports are generated, and every active tool passes through policy controls before touching a target.
+A safe-by-default MCP-style assistant for cybersecurity lab workflows. Architecturally, it is evolving into a **Trustworthy Autonomous Security Runtime**: a governed runtime for bounded, explainable, replayable security workflows.
 
 This project is intentionally built around the engineering skills that matter for modern agent systems:
 
@@ -13,6 +13,8 @@ This project is intentionally built around the engineering skills that matter fo
 - testable backend boundaries
 
 The current version runs without third-party runtime dependencies. That makes the safety model and protocol behavior easy to inspect, test, and extend before adding heavier integrations.
+
+For the full product-engineering roadmap, see [docs/product_roadmap.md](docs/product_roadmap.md).
 
 ## What It Does
 
@@ -82,6 +84,47 @@ Then use the app command from any terminal:
 security-lab-assistant recon 127.0.0.1 --ports 8000
 security-lab-assistant runs
 security-lab-assistant gui
+security-lab-assistant batch 127.0.0.1,localhost --ports 80 --role reviewer --approved
+security-lab-assistant verify
+security-lab-assistant verify --deep
+security-lab-assistant ops metrics
+security-lab-assistant ops events
+security-lab-assistant ops contracts
+security-lab-assistant ops workflows
+security-lab-assistant ops queue
+security-lab-assistant ops failures
+security-lab-assistant ops platform
+```
+
+Inspect advanced runtime intelligence for a saved run:
+
+```powershell
+security-lab-assistant runtime <run_id> explain
+security-lab-assistant runtime <run_id> cognition
+security-lab-assistant runtime <run_id> hypotheses
+security-lab-assistant runtime <run_id> confidence
+security-lab-assistant runtime <run_id> timeline
+security-lab-assistant runtime <run_id> redteam
+security-lab-assistant runtime <run_id> benchmark
+security-lab-assistant runtime <run_id> quality
+security-lab-assistant runtime <run_id> reasoning-graph
+security-lab-assistant runtime <run_id> benchmark-suite
+security-lab-assistant runtime <run_id> probabilistic
+security-lab-assistant runtime <run_id> ai-safety
+security-lab-assistant runtime <run_id> correlation
+security-lab-assistant runtime <run_id> trust-calibration
+security-lab-assistant runtime <run_id> simulation
+security-lab-assistant runtime <run_id> diff
+security-lab-assistant runtime <run_id> replay
+security-lab-assistant runtime <run_id> graph
+security-lab-assistant runtime <run_id> critique
+security-lab-assistant runtime <run_id> integrity
+```
+
+Add `--json` to any CLI output command when another tool needs machine-readable data:
+
+```powershell
+security-lab-assistant runtime <run_id> replay --json
 ```
 
 List saved runs:
@@ -151,7 +194,47 @@ The assistant is designed for owned labs, CTF boxes, local services, and intenti
 - SARIF exports in `.security_lab_assistant/exports`
 - JSONL audit events in `.security_lab_assistant/audit/events.jsonl`
 - SQLite run and audit index in `.security_lab_assistant/index.sqlite3`
+- HTML reasoning visualizers in `.security_lab_assistant/visualizations`
+- Detached HMAC artifact signatures in `.security_lab_assistant/signatures`
+- Workflow event stream in `.security_lab_assistant/events`
+- Local metrics stream in `.security_lab_assistant/metrics`
+- Durable workflow state, queue tasks, workflow leases, and recovery metadata in the local SQLite index
+- Append-only queue event stream in `.security_lab_assistant/queues/events.jsonl`
+- Benchmark records in `.security_lab_assistant/benchmarks`
+- Approval-gated multi-target batch orchestration with persisted batch records
+- Role-based guard checks for analyst, reviewer, admin, and auditor operations
+- Resource quotas for batch size, workflow events, and evidence items
+- Explicit runtime contracts for governance, reasoning, tools, evidence, and workflow control
+- Append-only hash-chained evidence lineage records
+- Subprocess-backed secure worker execution for tool calls
+- Worker capability contracts with declared operations, network scope, filesystem access, timeout, byte, memory, and concurrency limits
+- Signed execution manifests with worker id, tool name, hashes, quotas, attestation, policy hash, runtime version, timestamps, and failure status
+- Schema-versioned workflow state, queue task, lineage, audit, benchmark, and execution-manifest records
+- Structured runtime failure taxonomy for worker, governance, replay, lineage, attestation, policy, queue, lease, signature, reasoning, quota, and recovery failures
+- Signed worker output hashes linked from tool runtime metadata
 - Desktop GUI for recon execution, run history, policy review, and audit verification
+- Explainable runtime metadata for every workflow decision and evidence item
+- Security cognitive layer with competing hypotheses, uncertainty, contradictions, and calibrated confidence
+- Reasoning quality scores for evidence coverage, contradiction pressure, assumption density, hallucination risk, tool reliability, and reproducibility
+- Formal directed reasoning graphs that link evidence to hypotheses, weaknesses, contradictions, and quality scores
+- Typed reasoning nodes, typed reasoning edges, confidence states, graph hashes, state hashes, and replay hashes
+- Security agent benchmark suite for hallucination resistance, policy bypass resistance, evidence integrity, unsafe action prevention, false positive control, and reasoning depth
+- Explainability visualizer payloads for reasoning graphs, contradiction paths, and confidence evolution
+- Probabilistic reasoning distributions over competing security interpretations
+- AI safety research metadata for hallucination tracing, unsafe action simulation, adversarial prompt resistance, and reasoning corruption checks
+- Cross-run intelligence correlation for repeated target and risk-band patterns
+- Dynamic trust calibration based on evidence quality, replayability, historical context, and uncertainty
+- Synthetic security simulation universe definitions for safe benchmark worlds
+- Reasoning replay diffing across comparable runs
+- Reasoning timeline that records how interpretations shift as evidence arrives
+- Self-red-team review against weak assumptions, missing evidence, and false positives
+- Investigation tree for safe next-step planning
+- Benchmark checks for policy bypass resistance, hallucination resistance, reasoning quality, and evidence integrity
+- Deterministic evidence replay manifests with workflow hashes
+- Attack graph generation from services, assets, and findings
+- Adversarial critique records for false-positive review
+- Target memory snapshots for historical risk context
+- Trust scores, evidence integrity roots, and formal safety claims
 - Concurrent bounded TCP scanning for faster local lab reconnaissance
 - Risk score and severity rollups for executive-style summaries
 - Product-grade CLI commands for recon, run listing, and run inspection
@@ -164,15 +247,20 @@ The assistant is designed for owned labs, CTF boxes, local services, and intenti
 ```mermaid
 flowchart LR
     Client["MCP Client / CLI"] --> Server["JSON-RPC Server"]
-    Server --> Registry["Tool Registry"]
-    Server --> Workflow["Autonomous Recon Workflow"]
-    Workflow --> Policy["Lab Policy Engine"]
-    Registry --> Policy
-    Registry --> Tools["Network + Analysis Tools"]
+    Server --> Governance["Governance Runtime"]
+    Server --> Workflow["Workflow Runtime"]
+    Governance --> Policy["Policy + RBAC + Quotas"]
+    Workflow --> Governance
+    Workflow --> ToolRuntime["Tool Runtime"]
+    ToolRuntime --> Worker["Sandbox Worker Process"]
+    Worker --> Tools["Bounded Tools"]
     Tools --> Evidence["Structured Results"]
-    Workflow --> Findings["Findings"]
-    Workflow --> Store["Run Store + Reports + Audit"]
+    Evidence --> Reasoning["Reasoning Runtime"]
+    Reasoning --> Graph["Reasoning Graph + Replay"]
+    Workflow --> Store["Evidence Runtime + Artifacts"]
 ```
+
+Runtime contracts keep authority separated: governance is deterministic and cannot execute tools, reasoning is read-only and cannot mutate policy, tools execute in subprocess workers with explicit capability contracts, evidence owns append-only lineage and signatures, and workflow coordinates state transitions without direct network IO.
 
 ## Suggested Next Milestones
 

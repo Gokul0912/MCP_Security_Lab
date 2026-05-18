@@ -25,5 +25,9 @@
   "max_tcp_ports_per_scan": 32,
   "max_scan_workers": 16,
   "max_http_bytes": 262144,
-  "artifacts_dir": ".security_lab_assistant"
+  "artifacts_dir": ".security_lab_assistant",
+  "max_batch_targets": 25,
+  "max_workflow_events_per_run": 1000,
+  "max_run_evidence_items": 250,
+  "require_human_approval_for_batch": true
 }
