@@ -1,0 +1,19 @@
+{
+  "name": "default-local-lab",
+  "allowed_cidrs": [
+    "127.0.0.0/8",
+    "10.0.0.0/8",
+    "172.16.0.0/12",
+    "192.168.0.0/16"
+  ],
+  "allowed_hostnames": [
+    "localhost"
+  ],
+  "blocked_ports": [
+    25,
+    465,
+    587
+  ],
+  "max_tcp_ports_per_scan": 32,
+  "max_http_bytes": 262144
+}
