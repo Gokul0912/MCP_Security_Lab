@@ -7,3 +7,4 @@ build/
 *.egg-info/
 .coverage
 reports/
+.security_lab_assistant/

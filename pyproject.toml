@@ -1,11 +1,13 @@
 [project]
 name = "autonomous-security-lab-assistant"
-version = "0.1.0"
+version = "0.4.0"
 description = "Safe-by-default MCP-style autonomous assistant for cybersecurity lab workflows."
 readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "MCP Demo" }]
 dependencies = []
 [project.scripts]
+security-lab-assistant = "security_lab_assistant.cli:main"
 security-lab-mcp = "security_lab_assistant.server:main"
 security-lab-cli = "security_lab_assistant.cli:main"
+security-lab-gui = "security_lab_assistant.gui:main"

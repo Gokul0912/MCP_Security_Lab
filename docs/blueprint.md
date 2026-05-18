@@ -10,6 +10,7 @@ Build an Autonomous Security Lab Assistant that can reason over a lab objective,
 - Tools return structured evidence.
 - Workflows are deterministic enough to test.
 - Refusals are first-class outputs.
+- Runs, reports, and audit events are first-class product artifacts.
 - Risky capabilities are added behind explicit policy gates.
 
 ## Agent Loop
@@ -20,7 +21,8 @@ Build an Autonomous Security Lab Assistant that can reason over a lab objective,
 4. Execute one bounded action at a time.
 5. Store observations.
 6. Analyze observations into findings.
-7. Return a concise run report.
+7. Persist the run and audit events.
+8. Return a concise run report.
 
 ## Initial Threat Model
 
@@ -32,6 +34,11 @@ Build an Autonomous Security Lab Assistant that can reason over a lab objective,
 | Unbounded downloads | Maximum HTTP bytes |
 | Tool ambiguity | Structured tool schemas |
 | Hidden failures | Explicit `ok` and refusal data |
+| Redirect escape | Redirects reported but not followed |
+| Audit gaps | JSONL audit events and persisted runs |
+| Operator confusion | CLI run list/show commands |
+| Toolchain isolation | SARIF export for downstream security platforms |
+| Slow scans | Bounded concurrent TCP probes |
 
 ## Capability Roadmap
 
@@ -43,11 +50,16 @@ Build an Autonomous Security Lab Assistant that can reason over a lab objective,
 - Header recon
 - Basic workflow
 - Tests
+- Run store
+- Audit log
+- Markdown reports
+- SARIF exports
+- SQLite metadata index
+- Risk scoring
 
 ### Phase 2: Lab Runtime
 
 - Docker Compose vulnerable services
-- Report writer
 - Evidence database
 - Local browser automation for web labs
 

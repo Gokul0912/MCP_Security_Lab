@@ -10,7 +10,7 @@ from security_lab_assistant.tools.registry import TOOLS, list_tools
 from security_lab_assistant.workflows.autonomous_recon import run_autonomous_recon
 
 
-SERVER_INFO = {"name": "autonomous-security-lab-assistant", "version": "0.1.0"}
+SERVER_INFO = {"name": "autonomous-security-lab-assistant", "version": "0.4.0"}
 
 
 def _result_payload(result: ToolResult) -> JsonObject:
@@ -35,9 +35,15 @@ def _jsonrpc_error(request_id: Any, code: int, message: str) -> JsonObject:
 
 
 def handle_request(message: JsonObject, policy: LabPolicy) -> JsonObject | None:
+    if not isinstance(message, dict):
+        return _jsonrpc_error(None, -32600, "Invalid Request: message must be a JSON object.")
     method = message.get("method")
     request_id = message.get("id")
     params = message.get("params") or {}
+    if not isinstance(method, str):
+        return _jsonrpc_error(request_id, -32600, "Invalid Request: method must be a string.")
+    if not isinstance(params, dict):
+        return _jsonrpc_error(request_id, -32602, "Invalid params: params must be an object.")
 
     if method == "notifications/initialized":
         return None
@@ -47,7 +53,7 @@ def handle_request(message: JsonObject, policy: LabPolicy) -> JsonObject | None:
             request_id,
             {
                 "protocolVersion": "2024-11-05",
-                "capabilities": {"tools": {}},
+                "capabilities": {"tools": {}, "logging": {}},
                 "serverInfo": SERVER_INFO,
             },
         )
@@ -72,6 +78,10 @@ def handle_request(message: JsonObject, policy: LabPolicy) -> JsonObject | None:
     if method == "tools/call":
         name = params.get("name")
         arguments = params.get("arguments") or {}
+        if not isinstance(name, str):
+            return _jsonrpc_error(request_id, -32602, "Invalid params: tool name must be a string.")
+        if not isinstance(arguments, dict):
+            return _jsonrpc_error(request_id, -32602, "Invalid params: arguments must be an object.")
         if name == "workflow.autonomous_recon":
             return _jsonrpc_result(request_id, _result_payload(run_autonomous_recon(arguments, policy)))
         if name not in TOOLS:

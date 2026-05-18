@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import asdict, dataclass, field
 from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
@@ -15,6 +15,8 @@ class ToolResult:
     ok: bool
     data: JsonObject
     warnings: list[str] = field(default_factory=list)
+    started_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    finished_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
 
 
 @dataclass(frozen=True)
@@ -23,6 +25,9 @@ class Finding:
     severity: str
     evidence: str
     recommendation: str
+    affected_asset: str = ""
+    category: str = "reconnaissance"
+    confidence: str = "medium"
 
 
 @dataclass
@@ -31,9 +36,18 @@ class RunContext:
     objective: str
     run_id: str = field(default_factory=lambda: str(uuid4()))
     created_at: str = field(default_factory=lambda: datetime.now(UTC).isoformat())
+    status: str = "running"
+    phases: list[str] = field(default_factory=list)
     evidence: list[ToolResult] = field(default_factory=list)
     findings: list[Finding] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
 
     def add_result(self, result: ToolResult) -> ToolResult:
         self.evidence.append(result)
         return result
+
+    def add_phase(self, phase: str) -> None:
+        self.phases.append(phase)
+
+    def to_dict(self) -> JsonObject:
+        return asdict(self)

@@ -16,11 +16,22 @@ def serve(policy: LabPolicy) -> None:
         try:
             message = json.loads(line)
             response = handle_request(message, policy)
-        except Exception as exc:
+        except json.JSONDecodeError as exc:
             response = {
                 "jsonrpc": "2.0",
                 "id": None,
-                "error": {"code": -32603, "message": f"Internal error: {exc}"},
+                "error": {"code": -32700, "message": f"Parse error: {exc.msg}"},
+            }
+        except Exception as exc:
+            details = str(exc)
+            response = {
+                "jsonrpc": "2.0",
+                "id": None,
+                "error": {
+                    "code": -32603,
+                    "message": "Internal error. Check local audit logs for details.",
+                    "data": {"error_type": exc.__class__.__name__} if details else {},
+                },
             }
         if response is not None:
             sys.stdout.write(json.dumps(response, separators=(",", ":")) + "\n")

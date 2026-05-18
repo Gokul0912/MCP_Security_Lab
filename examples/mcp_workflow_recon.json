@@ -1,0 +1,1 @@
+{"jsonrpc":"2.0","id":4,"method":"tools/call","params":{"name":"workflow.autonomous_recon","arguments":{"target":"127.0.0.1","ports":[80,443,8000,8080],"objective":"baseline product smoke test"}}}

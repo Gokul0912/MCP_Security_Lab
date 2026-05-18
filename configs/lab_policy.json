@@ -9,11 +9,21 @@
   "allowed_hostnames": [
     "localhost"
   ],
+  "allow_dns_targets": false,
   "blocked_ports": [
     25,
     465,
     587
   ],
+  "allowed_schemes": [
+    "http",
+    "https"
+  ],
+  "max_redirects": 0,
+  "connect_timeout_seconds": 1.0,
+  "http_timeout_seconds": 3.0,
   "max_tcp_ports_per_scan": 32,
-  "max_http_bytes": 262144
+  "max_scan_workers": 16,
+  "max_http_bytes": 262144,
+  "artifacts_dir": ".security_lab_assistant"
 }
